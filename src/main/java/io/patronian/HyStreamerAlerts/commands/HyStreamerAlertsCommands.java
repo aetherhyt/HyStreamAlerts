@@ -13,6 +13,7 @@ import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import io.patronian.HyStreamerAlerts.HyStreamerAlertsPlugin;
 import io.patronian.HyStreamerAlerts.manager.AlertDataManager;
 import io.patronian.HyStreamerAlerts.manager.BotrixWebSocketManager;
+import io.patronian.HyStreamerAlerts.manager.BotrixChatManager;
 
 import javax.annotation.Nonnull;
 import java.util.UUID;
@@ -33,6 +34,7 @@ public class HyStreamerAlertsCommands extends AbstractPlayerCommand {
         addSubCommand(new SaConnectCommand());
         addSubCommand(new SaDisconnectCommand());
         addSubCommand(new SaSetBidCommand());
+        addSubCommand(new SaSetChatCommand());
         addSubCommand(new SaHelpCommand());
     }
 
@@ -48,6 +50,7 @@ public class HyStreamerAlertsCommands extends AbstractPlayerCommand {
         playerRef.sendMessage(Message.raw("/sa on - Enable alerts"));
         playerRef.sendMessage(Message.raw("/sa off - Disable alerts"));
         playerRef.sendMessage(Message.raw("/sa setbid <id> - Set Botrix broadcast ID"));
+        playerRef.sendMessage(Message.raw("/sa setchat <id> - Set Botrix Chat ID"));
         playerRef.sendMessage(Message.raw("/sa connect - Connect to Botrix"));
         playerRef.sendMessage(Message.raw("/sa disconnect - Disconnect from Botrix"));
         playerRef.sendMessage(Message.raw("/sa status - Show current status"));
@@ -74,15 +77,42 @@ public class HyStreamerAlertsCommands extends AbstractPlayerCommand {
             HyStreamerAlertsPlugin plugin = HyStreamerAlertsPlugin.getInstance();
             AlertDataManager dataManager = plugin.getAlertDataManager();
             BotrixWebSocketManager botrixManager = plugin.getBotrixWebSocketManager();
+            BotrixChatManager chatManager = plugin.getBotrixChatManager();
             
-            dataManager.setEnabled(playerId, true);
-            playerRef.sendMessage(Message.raw("Streamer alerts enabled!"));
+            boolean somethingDone = false;
+
+            if (dataManager.hasBroadcastId(playerId)) {
+                if (!botrixManager.isConnected(playerId)) {
+                    String broadcastId = dataManager.getBroadcastId(playerId);
+                    botrixManager.connectPlayer(playerId, broadcastId, () -> playerRef);
+                    playerRef.sendMessage(Message.raw("Connecting to Botrix alerts..."));
+                    somethingDone = true;
+                } else {
+                    playerRef.sendMessage(Message.raw("Already connected to Botrix alerts."));
+                }
+            } else {
+                playerRef.sendMessage(Message.raw("No broadcast ID set! Use /sa setbid <broadcast_id>"));
+            }
             
-            // Auto-connect if broadcast ID is set
-            if (dataManager.hasBroadcastId(playerId) && !botrixManager.isConnected(playerId)) {
-                String broadcastId = dataManager.getBroadcastId(playerId);
-                botrixManager.connectPlayer(playerId, broadcastId, () -> playerRef);
-                playerRef.sendMessage(Message.raw("Connecting to Botrix alerts..."));
+            if (dataManager.hasChatId(playerId)) {
+                if (!chatManager.isConnected(playerId)) {
+                    String chatId = dataManager.getChatId(playerId);
+                    chatManager.connectPlayer(playerId, chatId, () -> playerRef);
+                    playerRef.sendMessage(Message.raw("Connecting to Botrix Chat..."));
+                    somethingDone = true;
+                } else {
+                    playerRef.sendMessage(Message.raw("Already connected to Chat."));
+                }
+            } else {
+                playerRef.sendMessage(Message.raw("No Chat ID set! Use /sa setchat <chat_id>"));
+            }
+
+            if (somethingDone) {
+                dataManager.setEnabled(playerId, true);
+                playerRef.sendMessage(Message.raw("Streamer alerts enabled!"));
+            } else if (!dataManager.isEnabled(playerId)) {
+                 dataManager.setEnabled(playerId, true);
+                 playerRef.sendMessage(Message.raw("Streamer alerts enabled!"));
             }
         }
     }
@@ -119,15 +149,20 @@ public class HyStreamerAlertsCommands extends AbstractPlayerCommand {
             HyStreamerAlertsPlugin plugin = HyStreamerAlertsPlugin.getInstance();
             AlertDataManager dataManager = plugin.getAlertDataManager();
             BotrixWebSocketManager botrixManager = plugin.getBotrixWebSocketManager();
+            BotrixChatManager chatManager = plugin.getBotrixChatManager();
             
             boolean enabled = dataManager.isEnabled(playerId);
             boolean hasBid = dataManager.hasBroadcastId(playerId);
+            boolean hasChat = dataManager.hasChatId(playerId);
             boolean connected = botrixManager.isConnected(playerId);
+            boolean chatConnected = chatManager.isConnected(playerId);
             
             playerRef.sendMessage(Message.raw("=== Streamer Alerts Status ==="));
             playerRef.sendMessage(Message.raw("Alerts Enabled: " + (enabled ? "Yes" : "No")));
             playerRef.sendMessage(Message.raw("Broadcast ID: " + (hasBid ? dataManager.getBroadcastId(playerId) : "Not set")));
+            playerRef.sendMessage(Message.raw("Chat ID: " + (hasChat ? dataManager.getChatId(playerId) : "Not set")));
             playerRef.sendMessage(Message.raw("Botrix Connection: " + (connected ? "Connected" : "Disconnected")));
+            playerRef.sendMessage(Message.raw("Chat Connection: " + (chatConnected ? "Connected" : "Disconnected")));
         }
     }
     
@@ -146,20 +181,39 @@ public class HyStreamerAlertsCommands extends AbstractPlayerCommand {
             HyStreamerAlertsPlugin plugin = HyStreamerAlertsPlugin.getInstance();
             AlertDataManager dataManager = plugin.getAlertDataManager();
             BotrixWebSocketManager botrixManager = plugin.getBotrixWebSocketManager();
+            BotrixChatManager chatManager = plugin.getBotrixChatManager();
             
-            if (!dataManager.hasBroadcastId(playerId)) {
-                playerRef.sendMessage(Message.raw("No broadcast ID set! Use /sa setbid <broadcast_id> first"));
-                return;
-            }
-            if (botrixManager.isConnected(playerId)) {
-                playerRef.sendMessage(Message.raw("Already connected to Botrix!"));
-                return;
+            boolean somethingDone = false;
+
+            if (dataManager.hasBroadcastId(playerId)) {
+                if (!botrixManager.isConnected(playerId)) {
+                    String broadcastId = dataManager.getBroadcastId(playerId);
+                    botrixManager.connectPlayer(playerId, broadcastId, () -> playerRef);
+                    playerRef.sendMessage(Message.raw("Connecting to Botrix alerts..."));
+                    somethingDone = true;
+                } else {
+                    playerRef.sendMessage(Message.raw("Already connected to Botrix alerts."));
+                }
+            } else {
+                playerRef.sendMessage(Message.raw("No broadcast ID set! Use /sa setbid <broadcast_id>"));
             }
             
-            String broadcastId = dataManager.getBroadcastId(playerId);
-            botrixManager.connectPlayer(playerId, broadcastId, () -> playerRef);
-            dataManager.setEnabled(playerId, true);
-            playerRef.sendMessage(Message.raw("Connecting to Botrix alerts..."));
+            if (dataManager.hasChatId(playerId)) {
+                if (!chatManager.isConnected(playerId)) {
+                    String chatId = dataManager.getChatId(playerId);
+                    chatManager.connectPlayer(playerId, chatId, () -> playerRef);
+                    playerRef.sendMessage(Message.raw("Connecting to Botrix Chat..."));
+                    somethingDone = true;
+                } else {
+                    playerRef.sendMessage(Message.raw("Already connected to Chat."));
+                }
+            } else {
+                playerRef.sendMessage(Message.raw("No Chat ID set! Use /sa setchat <chat_id>"));
+            }
+
+            if (somethingDone) {
+                dataManager.setEnabled(playerId, true);
+            }
         }
     }
     
@@ -176,7 +230,8 @@ public class HyStreamerAlertsCommands extends AbstractPlayerCommand {
                               @Nonnull Ref<EntityStore> ref, @Nonnull PlayerRef playerRef, @Nonnull World world) {
             UUID playerId = playerRef.getUuid();
             HyStreamerAlertsPlugin.getInstance().getBotrixWebSocketManager().disconnectPlayer(playerId);
-            playerRef.sendMessage(Message.raw("Disconnected from Botrix alerts"));
+            HyStreamerAlertsPlugin.getInstance().getBotrixChatManager().disconnectPlayer(playerId);
+            playerRef.sendMessage(Message.raw("Disconnected from Botrix services"));
         }
     }
     
@@ -209,6 +264,36 @@ public class HyStreamerAlertsCommands extends AbstractPlayerCommand {
             playerRef.sendMessage(Message.raw("Use /sa connect to start receiving alerts"));
         }
     }
+
+    /**
+     * /sa setchat <chat_id> - Set Botrix Chat ID
+     */
+    public static class SaSetChatCommand extends AbstractPlayerCommand {
+        private final RequiredArg<String> chatIdArg;
+        
+        public SaSetChatCommand() {
+            super("setchat", "Set Botrix Chat ID");
+            this.chatIdArg = withRequiredArg("chatId", "Your Botrix Chat ID (e.g. 54870857)", ArgTypes.STRING);
+        }
+        
+        @Override
+        protected void execute(@Nonnull CommandContext ctx, @Nonnull Store<EntityStore> store,
+                              @Nonnull Ref<EntityStore> ref, @Nonnull PlayerRef playerRef, @Nonnull World world) {
+            UUID playerId = playerRef.getUuid();
+            AlertDataManager dataManager = HyStreamerAlertsPlugin.getInstance().getAlertDataManager();
+            
+            String chatId = ctx.get(chatIdArg);
+            
+            if (chatId == null || chatId.trim().isEmpty()) {
+                playerRef.sendMessage(Message.raw("Usage: /sa setchat <chat_id>"));
+                return;
+            }
+            
+            dataManager.setChatId(playerId, chatId.trim());
+            playerRef.sendMessage(Message.raw("Botrix Chat ID set: " + chatId));
+            playerRef.sendMessage(Message.raw("Use /sa connect to start receiving chat"));
+        }
+    }
     
     /**
      * /sa help - Show help
@@ -225,6 +310,7 @@ public class HyStreamerAlertsCommands extends AbstractPlayerCommand {
             playerRef.sendMessage(Message.raw("/sa on - Enable alerts"));
             playerRef.sendMessage(Message.raw("/sa off - Disable alerts"));
             playerRef.sendMessage(Message.raw("/sa setbid <id> - Set Botrix broadcast ID"));
+            playerRef.sendMessage(Message.raw("/sa setchat <id> - Set Botrix Chat ID"));
             playerRef.sendMessage(Message.raw("/sa connect - Connect to Botrix"));
             playerRef.sendMessage(Message.raw("/sa disconnect - Disconnect from Botrix"));
             playerRef.sendMessage(Message.raw("/sa status - Show current status"));

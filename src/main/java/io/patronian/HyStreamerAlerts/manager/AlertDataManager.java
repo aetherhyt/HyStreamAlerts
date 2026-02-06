@@ -15,6 +15,7 @@ public class AlertDataManager {
     private final Path dataFile;
     private final Set<UUID> enabledPlayers = new HashSet<>();
     private final Map<UUID, String> playerBroadcastIds = new HashMap<>();
+    private final Map<UUID, String> playerChatIds = new HashMap<>();
     
     public AlertDataManager(Path dataFolder) {
         this.dataFile = dataFolder.resolve("alerts.json");
@@ -106,10 +107,46 @@ public class AlertDataManager {
     public boolean hasBroadcastId(UUID playerId) {
         return playerBroadcastIds.containsKey(playerId);
     }
+
+    /**
+     * Gets the Chat/Room ID for a player.
+     * 
+     * @param playerId The player's UUID
+     * @return The chat ID or null if not set
+     */
+    public String getChatId(UUID playerId) {
+        return playerChatIds.get(playerId);
+    }
+
+    /**
+     * Sets the Chat/Room ID for a player.
+     * 
+     * @param playerId The player's UUID
+     * @param chatId The chat ID
+     */
+    public void setChatId(UUID playerId, String chatId) {
+        if (chatId == null || chatId.isEmpty()) {
+            playerChatIds.remove(playerId);
+        } else {
+            playerChatIds.put(playerId, chatId);
+        }
+        save();
+    }
+
+    /**
+     * Checks if a player has a chat ID configured.
+     * 
+     * @param playerId The player's UUID
+     * @return true if the player has a chat ID
+     */
+    public boolean hasChatId(UUID playerId) {
+        return playerChatIds.containsKey(playerId);
+    }
     
     private void parseJson(String json) {
         enabledPlayers.clear();
         playerBroadcastIds.clear();
+        playerChatIds.clear();
         
         // Parse enabledPlayers array
         int enabledStart = json.indexOf("\"enabledPlayers\"");
@@ -131,7 +168,19 @@ public class AlertDataManager {
             
             if (objStart != -1 && objEnd != -1) {
                 String objContent = json.substring(objStart + 1, objEnd);
-                parseBroadcastIds(objContent);
+                parseMap(objContent, playerBroadcastIds);
+            }
+        }
+
+        // Parse chatIds object
+        int chatStart = json.indexOf("\"chatIds\"");
+        if (chatStart != -1) {
+            int objStart = json.indexOf("{", chatStart);
+            int objEnd = findMatchingBrace(json, objStart);
+            
+            if (objStart != -1 && objEnd != -1) {
+                String objContent = json.substring(objStart + 1, objEnd);
+                parseMap(objContent, playerChatIds);
             }
         }
     }
@@ -182,8 +231,8 @@ public class AlertDataManager {
         }
     }
     
-    private void parseBroadcastIds(String objContent) {
-        // Parse key-value pairs like "uuid": "broadcastId"
+    private void parseMap(String objContent, Map<UUID, String> target) {
+        // Parse key-value pairs like "uuid": "value"
         int index = 0;
         while (index < objContent.length()) {
             // Find key
@@ -206,7 +255,7 @@ public class AlertDataManager {
             
             try {
                 UUID playerId = UUID.fromString(key);
-                playerBroadcastIds.put(playerId, value);
+                target.put(playerId, value);
             } catch (IllegalArgumentException ignored) {
                 // Skip invalid UUIDs
             }
@@ -239,6 +288,20 @@ public class AlertDataManager {
             sb.append("    \"").append(entry.getKey().toString()).append("\": \"")
               .append(entry.getValue()).append("\"");
             if (i < playerBroadcastIds.size() - 1) {
+                sb.append(",");
+            }
+            sb.append("\n");
+            i++;
+        }
+        sb.append("  },\n");
+
+        // Write chatIds object
+        sb.append("  \"chatIds\": {\n");
+        i = 0;
+        for (Map.Entry<UUID, String> entry : playerChatIds.entrySet()) {
+            sb.append("    \"").append(entry.getKey().toString()).append("\": \"")
+              .append(entry.getValue()).append("\"");
+            if (i < playerChatIds.size() - 1) {
                 sb.append(",");
             }
             sb.append("\n");
