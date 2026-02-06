@@ -22,7 +22,9 @@ A Hytale server plugin that displays real-time stream alerts (follows, subscript
 
 ## Screenshots
 
-*Coming soon*
+<img width="1277" height="980" alt="image" src="https://github.com/user-attachments/assets/d1e32478-b017-43af-9839-d17d7237de12" />
+<img width="1277" height="980" alt="image" src="https://github.com/user-attachments/assets/18713f41-4e76-4dc3-83d6-b4cabfa39a86" />
+
 
 ## Installation
 
