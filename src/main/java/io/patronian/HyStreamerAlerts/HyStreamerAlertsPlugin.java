@@ -4,9 +4,11 @@ import com.hypixel.hytale.server.core.plugin.JavaPlugin;
 import com.hypixel.hytale.server.core.plugin.JavaPluginInit;
 import io.patronian.HyStreamerAlerts.commands.HyStreamerAlertsCommands;
 import io.patronian.HyStreamerAlerts.manager.AlertDataManager;
-import io.patronian.HyStreamerAlerts.manager.BotrixWebSocketManager;
-import io.patronian.HyStreamerAlerts.manager.BotrixChatManager;
-import io.patronian.HyStreamerAlerts.manager.KickWebhookManager;
+import io.patronian.HyStreamerAlerts.impl.BotrixAlertProvider;
+import io.patronian.HyStreamerAlerts.impl.BotrixChatProvider;
+import io.patronian.HyStreamerAlerts.impl.HytaleAlertHandler;
+import io.patronian.HyStreamerAlerts.impl.HytaleChatHandler;
+import io.patronian.HyStreamerAlerts.impl.KickAlertProvider;
 
 import javax.annotation.Nonnull;
 import java.io.IOException;
@@ -16,9 +18,7 @@ import java.nio.file.Paths;
 public class HyStreamerAlertsPlugin extends JavaPlugin {
     
     private static HyStreamerAlertsPlugin instance;
-    private KickWebhookManager kickWebhookManager;
-    private BotrixWebSocketManager botrixWebSocketManager;
-    private BotrixChatManager botrixChatManager;
+    private StreamerServiceRegistry serviceRegistry;
     private AlertDataManager alertDataManager;
     
     public HyStreamerAlertsPlugin(@Nonnull JavaPluginInit init) {
@@ -28,40 +28,27 @@ public class HyStreamerAlertsPlugin extends JavaPlugin {
     
     @Override
     public void setup() {
+        initServices();
         registerCommands();
-        initAlertData();
     }
     
     @Override
     public void shutdown() {
-        if (kickWebhookManager != null) {
-            kickWebhookManager.stop();
-        }
-        if (botrixWebSocketManager != null) {
-            botrixWebSocketManager.shutdown();
-        }
-        if (botrixChatManager != null) {
-            botrixChatManager.shutdown();
+        if (serviceRegistry != null) {
+            serviceRegistry.shutdownAll();
         }
         if (alertDataManager != null) {
             alertDataManager.save();
         }
+        System.out.println("[HyStreamerAlerts] Plugin shutdown complete");
     }
     
     public static HyStreamerAlertsPlugin getInstance() {
         return instance;
     }
     
-    public KickWebhookManager getKickWebhookManager() {
-        return kickWebhookManager;
-    }
-    
-    public BotrixWebSocketManager getBotrixWebSocketManager() {
-        return botrixWebSocketManager;
-    }
-
-    public BotrixChatManager getBotrixChatManager() {
-        return botrixChatManager;
+    public StreamerServiceRegistry getServiceRegistry() {
+        return serviceRegistry;
     }
     
     public AlertDataManager getAlertDataManager() {
@@ -72,26 +59,35 @@ public class HyStreamerAlertsPlugin extends JavaPlugin {
         this.getCommandRegistry().registerCommand(new HyStreamerAlertsCommands());
     }
 
-    private void initAlertData(){
+    private void initServices(){
         // Initialize and load alert data
         Path dataFolder = Paths.get("plugins", "HyStreamerAlerts");
         alertDataManager = new AlertDataManager(dataFolder);
         alertDataManager.load();
+        
+        // Initialize Service Registry
+        serviceRegistry = new StreamerServiceRegistry();
 
-        // Initialize Botrix WebSocket manager
-        botrixWebSocketManager = new BotrixWebSocketManager();
-        System.out.println("[HyStreamerAlerts] Botrix WebSocket manager initialized");
+        // Initialize Botrix Provider and Handler
+        BotrixAlertProvider botrixAlerts = new BotrixAlertProvider();
+        botrixAlerts.setAlertHandler(new HytaleAlertHandler());
+        serviceRegistry.registerAlertProvider("botrix", botrixAlerts);
+        System.out.println("[HyStreamerAlerts] Botrix Alert Provider initialized");
 
-        // Initialize Botrix Chat manager
-        botrixChatManager = new BotrixChatManager();
-        System.out.println("[HyStreamerAlerts] Botrix Chat manager initialized");
+        BotrixChatProvider botrixChat = new BotrixChatProvider();
+        botrixChat.setChatHandler(new HytaleChatHandler());
+        serviceRegistry.registerChatProvider("botrix", botrixChat);
+        System.out.println("[HyStreamerAlerts] Botrix Chat Provider initialized");
 
-        // Start the Kick webhook server on port 8080 (configurable) - kept for backwards compatibility
-        kickWebhookManager = new KickWebhookManager(8080);
+        // Initialize Kick Provider (Server)
+        KickAlertProvider kickAlerts = new KickAlertProvider();
+        kickAlerts.setAlertHandler(new HytaleAlertHandler());
         try {
-            kickWebhookManager.start();
+            kickAlerts.startServer();
+            serviceRegistry.registerAlertProvider("kick", kickAlerts);
+            System.out.println("[HyStreamerAlerts] Kick Alert Provider initialized");
         } catch (IOException e) {
-            System.out.println("[HyStreamerAlerts] Failed to start webhook server: " + e.getMessage());
+            System.out.println("[HyStreamerAlerts] Failed to start Kick webhook server: " + e.getMessage());
         }
     }
 }
