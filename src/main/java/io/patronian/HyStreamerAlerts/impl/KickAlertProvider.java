@@ -165,8 +165,7 @@ public class KickAlertProvider implements AlertProvider {
             if (playerRefSupplier == null) return;
             
             PlayerRef player = playerRefSupplier.get();
-            if (player == null || !player.isValid()) return;
-            
+            System.out.println(eventType.toLowerCase());
             switch (eventType.toLowerCase()) {
                 case "follow":
                 case "follower":

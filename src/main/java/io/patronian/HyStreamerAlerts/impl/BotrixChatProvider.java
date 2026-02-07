@@ -1,6 +1,8 @@
 package io.patronian.HyStreamerAlerts.impl;
 
 import com.hypixel.hytale.server.core.universe.PlayerRef;
+import com.hypixel.hytale.server.core.Message;
+import io.patronian.HyStreamerAlerts.HyStreamerAlertsPlugin;
 import io.patronian.HyStreamerAlerts.api.ChatHandler;
 import io.patronian.HyStreamerAlerts.api.ChatProvider;
 
@@ -95,24 +97,29 @@ public class BotrixChatProvider implements ChatProvider {
 
         void connect() {
             if (!shouldReconnect) return;
+            sendDebug("Attempting connection to Pusher/Botrix...");
             try {
                 httpClient.newWebSocketBuilder()
                         .connectTimeout(CONNECT_TIMEOUT)
                         .buildAsync(URI.create(PUSHER_WS_URL), this)
                         .whenComplete((ws, error) -> {
                             if (error != null) {
+                                sendDebug("Connection failed: " + error.getMessage());
                                 scheduleReconnect();
                             } else {
+                                sendDebug("Connection successful. Starting heartbeat.");
                                 this.webSocket = ws;
                                 startHeartbeat();
                             }
                         });
             } catch (Exception e) {
+                sendDebug("Exception during connect: " + e.getMessage());
                 scheduleReconnect();
             }
         }
 
         void disconnect() {
+            sendDebug("Disconnecting...");
             shouldReconnect = false;
             stopHeartbeat();
             if (webSocket != null) {
@@ -125,6 +132,18 @@ public class BotrixChatProvider implements ChatProvider {
 
         boolean isConnected() {
             return webSocket != null && !webSocket.isInputClosed() && !webSocket.isOutputClosed();
+        }
+
+        private void sendDebug(String message) {
+            String prefix = "[HyStreamerAlerts-DEBUG] ";
+            System.out.println(prefix + message);
+            
+            if (HyStreamerAlertsPlugin.getInstance().isDebugMode()) {
+                 PlayerRef player = playerRefSupplier.get();
+                 if (player != null && player.isValid()) {
+                     player.sendMessage(Message.raw("\u00A78[Debug][BotrixChat] \u00A77" + message));
+                 }
+            }
         }
 
         private void startHeartbeat() {
@@ -151,6 +170,7 @@ public class BotrixChatProvider implements ChatProvider {
 
         @Override
         public void onOpen(WebSocket webSocket) {
+            sendDebug("Chat WebSocket Opened");
             webSocket.request(1);
         }
 
@@ -158,7 +178,8 @@ public class BotrixChatProvider implements ChatProvider {
         public CompletionStage<?> onText(WebSocket webSocket, CharSequence data, boolean last) {
             messageBuffer.append(data);
             if (last) {
-                processMessage(messageBuffer.toString());
+                String fullMessage = messageBuffer.toString();
+                processMessage(fullMessage);
                 messageBuffer.setLength(0);
             }
             webSocket.request(1);
@@ -167,6 +188,7 @@ public class BotrixChatProvider implements ChatProvider {
 
         @Override
         public void onError(WebSocket webSocket, Throwable error) {
+            sendDebug("Chat WebSocket Error: " + error.getMessage());
             this.webSocket = null;
             stopHeartbeat();
             scheduleReconnect();
@@ -174,6 +196,7 @@ public class BotrixChatProvider implements ChatProvider {
         
         @Override
         public CompletionStage<?> onClose(WebSocket webSocket, int statusCode, String reason) {
+            sendDebug("Chat WebSocket Closed: " + statusCode + " - " + reason);
             this.webSocket = null;
             stopHeartbeat();
             scheduleReconnect();
@@ -181,17 +204,45 @@ public class BotrixChatProvider implements ChatProvider {
         }
 
         private void processMessage(String json) {
+            sendDebug(json);
             String eventName = JsonUtils.extractJsonValue(json, "event");
+            sendDebug("Processing event: " + (eventName == null ? "null" : eventName));
+            
             if (eventName == null) return;
 
             if (eventName.equals("pusher:connection_established")) {
-                 String channel = "chatroom." + chatId + ".v2";
-                 String subscribeMsg = "{\"event\":\"pusher:subscribe\",\"data\":{\"auth\":\"\",\"channel\":\"" + channel + "\"}}";
-                 if (webSocket != null) webSocket.sendText(subscribeMsg, true);
+                 sendDebug("Connection established. Subscribing to channels...");
+                 
+                 // Support multiple IDs (e.g. "ID1,ID2")
+                 String[] ids = chatId.split("[,|]");
+                     
+                    // Try all known channel formats for each ID
+                    String[] channels = {
+                        "chatrooms." + ids[1] + ".v2",
+                        "chatroom_" + ids[1],
+                        "channel." + ids[0],
+                        "channel_" + ids[0]
+                    };
+
+                    for (String channel : channels) {
+                        sendDebug("Subscribing to: " + channel);
+                        String subscribeMsg = "{\"event\":\"pusher:subscribe\",\"data\":{\"auth\":\"\",\"channel\":\"" + channel + "\"}}";
+                        if (webSocket != null) webSocket.sendText(subscribeMsg, true);
+                    }
+                 
+            } else if (eventName.equals("pusher_internal:subscription_succeeded")) {
+                 String channel = JsonUtils.extractJsonValue(json, "channel");
+                 sendDebug("Subscription SUCCEEDED for channel: " + channel);
+            } else if (eventName.equals("pusher:error")) {
+                 sendDebug("Pusher Error: " + json);
             } else if (eventName.contains("ChatMessageEvent")) {
+                sendDebug("Chat Message Event Received!");
                 handleChatEvent(json);
             } else if (eventName.equals("pusher:ping")) {
+                 // sendDebug("Ping received, sending pong"); // Too spammy
                  if (webSocket != null) webSocket.sendText("{\"event\":\"pusher:pong\",\"data\":{}}", true);
+            } else {
+                 sendDebug("Ignored event: " + eventName);
             }
         }
 

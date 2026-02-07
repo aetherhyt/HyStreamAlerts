@@ -49,8 +49,10 @@ public class HytaleAlertHandler implements AlertHandler {
     }
     
     private void showTitle(PlayerRef player, String title, String subtitle) {
-        if (player == null || player.isValid()) return;
-        
+
+        // Show chat message as backup
+        player.sendMessage(Message.raw("\u00A76[Alert] \u00A7e" + title + " - " + subtitle));
+
         EventTitleUtil.showEventTitleToPlayer(
                 player,
                 Message.raw(title),

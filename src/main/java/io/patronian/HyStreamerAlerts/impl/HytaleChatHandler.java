@@ -8,8 +8,6 @@ public class HytaleChatHandler implements ChatHandler {
 
     @Override
     public void onMessage(PlayerRef player, String sender, String message, String platform) {
-        if (player == null || !player.isValid()) return;
-        
         // Format: [Stream] Username: Message
         // Using Hytale color codes: \u00A7
         // b = aqua, f = white, 7 = gray

@@ -1,6 +1,8 @@
 package io.patronian.HyStreamerAlerts.impl;
 
 import com.hypixel.hytale.server.core.universe.PlayerRef;
+import com.hypixel.hytale.server.core.Message;
+import io.patronian.HyStreamerAlerts.HyStreamerAlertsPlugin;
 import io.patronian.HyStreamerAlerts.api.AlertHandler;
 import io.patronian.HyStreamerAlerts.api.AlertProvider;
 
@@ -94,30 +96,45 @@ public class BotrixAlertProvider implements AlertProvider {
 
         void connect() {
             if (!shouldReconnect) return;
-            
+            sendDebug("Attempting connection to Alert WebSocket...");
             try {
                 httpClient.newWebSocketBuilder()
                         .connectTimeout(CONNECT_TIMEOUT)
                         .buildAsync(URI.create(BOTRIX_WS_URL), this)
                         .whenComplete((ws, error) -> {
                             if (error != null) {
+                                sendDebug("Connection failed: " + error.getMessage());
                                 scheduleReconnect();
                             } else {
                                 this.webSocket = ws;
                             }
                         });
             } catch (Exception e) {
+                sendDebug("Exception during connect: " + e.getMessage());
                 scheduleReconnect();
             }
         }
 
         void disconnect() {
+            sendDebug("Disconnecting...");
             shouldReconnect = false;
             if (webSocket != null) {
                 try {
                     webSocket.sendClose(WebSocket.NORMAL_CLOSURE, "Disconnecting");
                 } catch (Exception ignored) {}
                 webSocket = null;
+            }
+        }
+        
+        private void sendDebug(String message) {
+            String prefix = "[HyStreamerAlerts-DEBUG] ";
+            System.out.println(prefix + message);
+            
+            if (HyStreamerAlertsPlugin.getInstance().isDebugMode()) {
+                 PlayerRef player = playerRefSupplier.get();
+                 if (player != null && player.isValid()) {
+                     player.sendMessage(Message.raw("\u00A78[Debug][BotrixAlert] \u00A77" + message));
+                 }
             }
         }
 
@@ -134,6 +151,7 @@ public class BotrixAlertProvider implements AlertProvider {
         @Override
         public void onOpen(WebSocket webSocket) {
             String authMessage = "{\"type\":\"AUTH\",\"bid\":\"" + broadcastId + "\"}";
+            sendDebug("Sending Alerts Auth: " + authMessage);
             webSocket.sendText(authMessage, true);
             webSocket.request(1);
         }
@@ -142,7 +160,12 @@ public class BotrixAlertProvider implements AlertProvider {
         public CompletionStage<?> onText(WebSocket webSocket, CharSequence data, boolean last) {
             messageBuffer.append(data);
             if (last) {
-                processMessage(messageBuffer.toString());
+                String fullMessage = messageBuffer.toString();
+                // Avoid spamming PING/PONG logs unless critical
+                if (!fullMessage.contains("\"type\":\"PING\"") && !fullMessage.contains("\"type\":\"PONG\"")) {
+                    sendDebug("Rx: " + fullMessage);
+                }
+                processMessage(fullMessage);
                 messageBuffer.setLength(0);
             }
             webSocket.request(1);
@@ -158,12 +181,14 @@ public class BotrixAlertProvider implements AlertProvider {
 
         @Override
         public void onError(WebSocket webSocket, Throwable error) {
+            sendDebug("Alert WebSocket Error: " + error.getMessage());
             this.webSocket = null;
             scheduleReconnect();
         }
         
         @Override
         public CompletionStage<?> onClose(WebSocket webSocket, int statusCode, String reason) {
+            sendDebug("Alert WebSocket Closed: " + statusCode + " - " + reason);
             this.webSocket = null;
             scheduleReconnect();
             return null;
@@ -177,10 +202,11 @@ public class BotrixAlertProvider implements AlertProvider {
                     String pongMessage = "{\"type\":\"PONG\",\"time\":" + timestamp + "}";
                     if (webSocket != null) webSocket.sendText(pongMessage, true);
                 } else if ("MSG".equals(type)) {
+                    sendDebug("Alert Received! " + message);
                     handleAlertMessage(message);
                 }
             } catch (Exception e) {
-                // Log error
+                 sendDebug("Error processing alert: " + e.getMessage());
             }
         }
 
@@ -195,8 +221,9 @@ public class BotrixAlertProvider implements AlertProvider {
             if (content == null || nickName == null) return;
 
             PlayerRef player = playerRefSupplier.get();
+            System.out.println(player);
             if (player == null) return;
-
+            System.out.println(content);
             switch (content) {
                 case "!follow":
                     alertHandler.onFollow(player, nickName, platform);

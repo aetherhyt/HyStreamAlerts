@@ -20,6 +20,7 @@ public class HyStreamerAlertsPlugin extends JavaPlugin {
     private static HyStreamerAlertsPlugin instance;
     private StreamerServiceRegistry serviceRegistry;
     private AlertDataManager alertDataManager;
+    private boolean debugMode = false;
     
     public HyStreamerAlertsPlugin(@Nonnull JavaPluginInit init) {
         super(init);
@@ -53,6 +54,14 @@ public class HyStreamerAlertsPlugin extends JavaPlugin {
     
     public AlertDataManager getAlertDataManager() {
         return alertDataManager;
+    }
+
+    public boolean isDebugMode() {
+        return debugMode;
+    }
+
+    public void setDebugMode(boolean debugMode) {
+        this.debugMode = debugMode;
     }
 
     private void registerCommands(){

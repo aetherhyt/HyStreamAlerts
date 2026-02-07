@@ -4,6 +4,7 @@ import com.hypixel.hytale.component.Ref;
 import com.hypixel.hytale.component.Store;
 import com.hypixel.hytale.server.core.Message;
 import com.hypixel.hytale.server.core.command.system.CommandContext;
+import com.hypixel.hytale.server.core.command.system.arguments.system.OptionalArg;
 import com.hypixel.hytale.server.core.command.system.arguments.system.RequiredArg;
 import com.hypixel.hytale.server.core.command.system.arguments.types.ArgTypes;
 import com.hypixel.hytale.server.core.command.system.basecommands.AbstractPlayerCommand;
@@ -12,7 +13,9 @@ import com.hypixel.hytale.server.core.universe.world.World;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import io.patronian.HyStreamerAlerts.HyStreamerAlertsPlugin;
 import io.patronian.HyStreamerAlerts.api.AlertProvider;
+import io.patronian.HyStreamerAlerts.api.ChatHandler;
 import io.patronian.HyStreamerAlerts.api.ChatProvider;
+import io.patronian.HyStreamerAlerts.impl.HytaleChatHandler;
 import io.patronian.HyStreamerAlerts.manager.AlertDataManager;
 
 import javax.annotation.Nonnull;
@@ -20,7 +23,7 @@ import java.util.UUID;
 
 /**
  * Main Streamer Alerts command with subcommands.
- * Usage: /sa <on|off|status|connect|disconnect|setbid|help>
+ * Usage: /sa on|off|status|connect|disconnect|setbid|help
  */
 public class HyStreamerAlertsCommands extends AbstractPlayerCommand {
     
@@ -35,6 +38,8 @@ public class HyStreamerAlertsCommands extends AbstractPlayerCommand {
         addSubCommand(new SaDisconnectCommand());
         addSubCommand(new SaSetBidCommand());
         addSubCommand(new SaSetChatCommand());
+        addSubCommand(new SaTestChatCommand());
+        addSubCommand(new SaDebugCommand());
         addSubCommand(new SaHelpCommand());
     }
 
@@ -54,10 +59,36 @@ public class HyStreamerAlertsCommands extends AbstractPlayerCommand {
         playerRef.sendMessage(Message.raw("/sa connect - Connect to Botrix"));
         playerRef.sendMessage(Message.raw("/sa disconnect - Disconnect from Botrix"));
         playerRef.sendMessage(Message.raw("/sa status - Show current status"));
+        playerRef.sendMessage(Message.raw("/sa testchat [message] - Simulate a chat message"));
     }
     
     public static boolean isEnabled(UUID playerId) {
         return HyStreamerAlertsPlugin.getInstance().getAlertDataManager().isEnabled(playerId);
+    }
+
+    public static String extractIdFromUrl(String url) {
+        if (url == null) return null;
+        if (!url.startsWith("http")) return url;
+        
+        // Try to find 'bid='
+        int bidIndex = url.indexOf("bid=");
+        if (bidIndex != -1) {
+             int start = bidIndex + 4;
+             int end = url.indexOf("&", start);
+             if (end == -1) end = url.length();
+             return url.substring(start, end);
+        }
+        
+        // Try to find 'id=' (legacy)
+        int idIndex = url.indexOf("id=");
+        if (idIndex != -1) {
+             int start = idIndex + 3;
+             int end = url.indexOf("&", start);
+             if (end == -1) end = url.length();
+             return url.substring(start, end);
+        }
+        
+        return url;
     }
     
     // ==================== SUBCOMMANDS ====================
@@ -256,28 +287,32 @@ public class HyStreamerAlertsCommands extends AbstractPlayerCommand {
             UUID playerId = playerRef.getUuid();
             AlertDataManager dataManager = HyStreamerAlertsPlugin.getInstance().getAlertDataManager();
             
-            String broadcastId = ctx.get(broadcastIdArg);
+            String input = ctx.get(broadcastIdArg);
             
-            if (broadcastId == null || broadcastId.trim().isEmpty()) {
-                playerRef.sendMessage(Message.raw("Usage: /sa setbid <broadcast_id>"));
+            if (input == null || input.trim().isEmpty()) {
+                playerRef.sendMessage(Message.raw("Usage: /sa setbid <broadcast_id_or_url>"));
                 return;
             }
             
-            dataManager.setBroadcastId(playerId, broadcastId.trim());
+            String broadcastId = extractIdFromUrl(input.trim());
+            
+            dataManager.setBroadcastId(playerId, broadcastId);
             playerRef.sendMessage(Message.raw("Botrix broadcast ID set: " + broadcastId));
             playerRef.sendMessage(Message.raw("Use /sa connect to start receiving alerts"));
         }
     }
 
     /**
-     * /sa setchat <chat_id> - Set Botrix Chat ID
+     * /sa setchat <chat_id> [channel_id] - Set Botrix Chat IDs
      */
     public static class SaSetChatCommand extends AbstractPlayerCommand {
         private final RequiredArg<String> chatIdArg;
+        private final OptionalArg<String> channelIdArg;
         
         public SaSetChatCommand() {
-            super("setchat", "Set Botrix Chat ID");
-            this.chatIdArg = withRequiredArg("chatId", "Your Botrix Chat ID (e.g. 54870857)", ArgTypes.STRING);
+            super("setchat", "Set Botrix Chat ID(s)");
+            this.chatIdArg = withRequiredArg("chatId", "Your Botrix Chatroom ID", ArgTypes.STRING);
+            this.channelIdArg = withOptionalArg("channelId", ArgTypes.STRING);
         }
         
         @Override
@@ -286,19 +321,73 @@ public class HyStreamerAlertsCommands extends AbstractPlayerCommand {
             UUID playerId = playerRef.getUuid();
             AlertDataManager dataManager = HyStreamerAlertsPlugin.getInstance().getAlertDataManager();
             
-            String chatId = ctx.get(chatIdArg);
+            String id1 = ctx.get(chatIdArg);
+            String id2 = ctx.get(channelIdArg);
             
-            if (chatId == null || chatId.trim().isEmpty()) {
-                playerRef.sendMessage(Message.raw("Usage: /sa setchat <chat_id>"));
+            if (id1 == null || id1.trim().isEmpty()) {
+                playerRef.sendMessage(Message.raw("Usage: /sa setchat <chatroom_id> [channel_id]"));
                 return;
             }
             
-            dataManager.setChatId(playerId, chatId.trim());
-            playerRef.sendMessage(Message.raw("Botrix Chat ID set: " + chatId));
+            String finalId = extractIdFromUrl(id1.trim());
+            
+            if (id2 != null && !id2.trim().isEmpty()) {
+                 finalId += "," + extractIdFromUrl(id2.trim());
+            }
+            
+            dataManager.setChatId(playerId, finalId);
+            playerRef.sendMessage(Message.raw("Botrix Chat ID(s) set: " + finalId));
             playerRef.sendMessage(Message.raw("Use /sa connect to start receiving chat"));
         }
     }
     
+    /**
+     * /sa testchat [message] - Simulate a chat message
+     */
+    public static class SaTestChatCommand extends AbstractPlayerCommand {
+        private final OptionalArg<String> messageArg;
+        
+        public SaTestChatCommand() {
+            super("testchat", "Simulate a chat message to test display");
+            this.messageArg = withOptionalArg("message", "", ArgTypes.STRING);
+        }
+        
+        @Override
+        protected void execute(@Nonnull CommandContext ctx, @Nonnull Store<EntityStore> store,
+                              @Nonnull Ref<EntityStore> ref, @Nonnull PlayerRef playerRef, @Nonnull World world) {
+            String message = ctx.get(messageArg);
+            if (message == null) message = "This is a test message!";
+            
+            ChatHandler handler = new HytaleChatHandler();
+            handler.onMessage(playerRef, "TestUser", message, "Test");
+            
+            playerRef.sendMessage(Message.raw("Test message simulation sent."));
+        }
+    }
+    
+    /**
+     * /sa debug on|off - Toggle debug mode
+     */
+    public static class SaDebugCommand extends AbstractPlayerCommand {
+        private final RequiredArg<String> stateArg;
+
+        public SaDebugCommand() {
+            super("debug", "Toggle debug mode");
+            this.stateArg = withRequiredArg("state", "Switching on | off debug in game mode.", ArgTypes.STRING);
+        }
+
+        @Override
+        protected void execute(@Nonnull CommandContext ctx, @Nonnull Store<EntityStore> store,
+                               @Nonnull Ref<EntityStore> ref, @Nonnull PlayerRef playerRef, @Nonnull World world) {
+            String state = ctx.get(stateArg);
+            boolean enable = "on".equalsIgnoreCase(state) || "true".equalsIgnoreCase(state);
+            
+            HyStreamerAlertsPlugin.getInstance().setDebugMode(enable);
+            
+            playerRef.sendMessage(Message.raw("\u00A7e[HyStreamerAlerts] Debug mode is now: \u00A7f" + (enable ? "ON" : "OFF")));
+        }
+    }
+
     /**
      * /sa help - Show help
      */
@@ -314,10 +403,12 @@ public class HyStreamerAlertsCommands extends AbstractPlayerCommand {
             playerRef.sendMessage(Message.raw("/sa on - Enable alerts"));
             playerRef.sendMessage(Message.raw("/sa off - Disable alerts"));
             playerRef.sendMessage(Message.raw("/sa setbid <id> - Set Botrix broadcast ID"));
-            playerRef.sendMessage(Message.raw("/sa setchat <id> - Set Botrix Chat ID"));
+            playerRef.sendMessage(Message.raw("/sa setchat <chat_id> [channel_id] - Set Botrix Chat IDs"));
             playerRef.sendMessage(Message.raw("/sa connect - Connect to Botrix"));
             playerRef.sendMessage(Message.raw("/sa disconnect - Disconnect from Botrix"));
             playerRef.sendMessage(Message.raw("/sa status - Show current status"));
+            playerRef.sendMessage(Message.raw("/sa testchat [message] - Simulate a chat message"));
+            playerRef.sendMessage(Message.raw("/sa debug <on|off> - Toggle debug info"));
         }
     }
 }
